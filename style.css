@@ -1,4 +1,4 @@
-/* ── CSS variables (GitHub dark theme) ──────────────── */
+/* ── LitDiff — CSS variables (GitHub dark theme) ───── */
 :root {
   --bg:             #010409;
   --panel:          #0d1117;
@@ -81,6 +81,26 @@ html, body {
 #toolbar button:hover                  { background: var(--btn-hover); border-color: var(--muted); }
 #toolbar button:disabled               { color: var(--disabled-text); border-color: var(--border-subtle); background: var(--surface); cursor: not-allowed; opacity: 0.6; }
 
+#btn-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+#btn-info:hover { color: var(--accent); background: transparent; border-color: transparent; }
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
 #toolbar select                        { max-width: 420px; min-width: 90px; appearance: none;
                                           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e'%3E%3Cpath d='M6 8.5L1.5 4h9z'/%3E%3C/svg%3E");
                                           background-repeat: no-repeat; background-position: right 8px center; padding-right: 28px; }
@@ -101,13 +121,17 @@ html, body {
 #toolbar label                         { font-size: var(--toolbar-font-size); color: var(--muted); flex-shrink: 0; font-weight: 500; }
 
 #pr-title {
-  font-size: var(--toolbar-font-size);
+  display: none;
+  font-size: 11px;
   color: var(--muted);
+  padding: 6px 12px 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--border-subtle);
 }
+#pr-title:not(:empty) { display: block; }
 
 #status-msg {
   font-size: 11px;
@@ -277,8 +301,17 @@ tr.expandable-hunk:hover > td,
 tr.expandable-hunk:hover .d2h-info,
 tr.expandable-hunk:hover .d2h-code-line.d2h-info { background: rgba(56,139,253,0.15) !important; }
 tr.expandable-hunk:hover .d2h-code-line-ctn { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
-.d2h-expand-icon                { color: var(--accent); margin-right: 6px; font-size: 14px; vertical-align: middle; opacity: 0.85; transition: opacity 0.15s, transform 0.15s; }
-tr.expandable-hunk:hover .d2h-expand-icon { opacity: 1; transform: scaleY(1.2); }
+.d2h-expand-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  vertical-align: middle;
+  opacity: 0.7;
+  transition: opacity 0.15s, transform 0.15s;
+}
+.d2h-expand-icon svg { display: block; }
+tr.expandable-hunk:hover .d2h-expand-icon { opacity: 1; transform: scaleY(1.25); }
 .d2h-emptyplaceholder           { background: var(--surface) !important; border-color: var(--border-subtle) !important; }
 
 /* ── Normal (unchanged) diff lines ─────────────────── */
@@ -320,7 +353,7 @@ del.d2h-change, ins.d2h-change,
 .d2h-files-diff                 { display: flex !important; }
 .d2h-file-side-diff             { overflow-x: auto; overflow-y: hidden; flex: 1; min-width: 0; }
 
-/* ── Track context menu (right-click) ──────────────── */
+/* ── Highlight context menu (right-click) ─────────── */
 #track-context-menu {
   display: none;
   position: fixed;
@@ -348,11 +381,77 @@ del.d2h-change, ins.d2h-change,
 .track-menu-item:hover { background: rgba(56,139,253,0.15); }
 .track-menu-item svg   { flex-shrink: 0; opacity: 0.7; }
 
-/* ── Track highlights ──────────────────────────────── */
+/* ── Highlight marks ──────────────────────────────── */
 .track-highlight {
   background: rgba(210, 153, 34, 0.35);
   border-bottom: 2px solid #d29922;
   border-radius: 2px;
   color: inherit;
   padding: 0 1px;
+}
+
+/* ── About modal ──────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+.modal-overlay.hidden { display: none; }
+
+#about-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 440px;
+  max-width: 90vw;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.modal-header button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  transition: color 0.15s;
+}
+.modal-header button:hover { color: var(--text); }
+
+.modal-body {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+}
+.modal-body p   { margin: 0 0 10px; }
+.modal-body ul  { margin: 6px 0 0; padding-left: 20px; }
+.modal-body li  { margin-bottom: 4px; }
+.modal-body a   { color: var(--accent); text-decoration: none; }
+.modal-body a:hover { text-decoration: underline; }
+.modal-body code {
+  background: var(--btn-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--code-font);
+  font-size: 12px;
 }

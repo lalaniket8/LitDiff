@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'none'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src https://api.github.com; img-src data:" />
-    <title>PR Test Diff Viewer</title>
+    <title>LitDiff</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%2358a6ff'><path d='M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Z'/></svg>" />
 
     <!-- diff2html + jsdiff (with SRI) -->
@@ -29,22 +29,45 @@
 
     <!-- Toolbar -->
     <div id="toolbar">
+      <button id="btn-info" title="About LitDiff" aria-label="About LitDiff">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-6.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM6.5 7.75A.75.75 0 0 1 7.25 7h1a.75.75 0 0 1 .75.75v2.75h.25a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1 0-1.5h.25V8.5h-.25a.75.75 0 0 1-.75-.75ZM8 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>
+      </button>
+      <div class="toolbar-separator"></div>
       <label for="pr-url">PR:</label>
       <input id="pr-url" type="text" placeholder="PR # or URL  (e.g. 2023 or https://github.com/owner/repo/pull/123)" spellcheck="false">
       <button id="btn-load">Load</button>
       <label for="gh-token">Token:</label>
-      <input id="gh-token" type="password" placeholder="gh auth token" title="Only public_repo or fine-grained read-only scope is needed">
+      <input id="gh-token" type="password" placeholder="gh auth token" title="gh auth token">
       <label for="commit-select">Commit:</label>
       <select id="commit-select" disabled>
         <option value="ALL">ALL</option>
       </select>
-      <label for="view-select">View:</label>
+      <label for="view-select">Layout:</label>
       <select id="view-select">
-        <option value="side-by-side">Side by Side</option>
-        <option value="collapsed">Collapsed</option>
+        <option value="side-by-side">Split</option>
+        <option value="collapsed">Unified</option>
       </select>
-      <span id="pr-title"></span>
       <span id="status-msg"></span>
+    </div>
+
+    <!-- About modal -->
+    <div id="about-overlay" class="modal-overlay hidden">
+      <div id="about-modal">
+        <div class="modal-header">
+          <span class="modal-title">About LitDiff</span>
+          <button id="about-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Browser diff viewer for <a href="https://llvm.org/docs/CommandGuide/FileCheck.html" target="_blank" rel="noopener">LLVM FileCheck</a> check lines in GitHub PRs.</p>
+          <p>Strips FileCheck pattern noise (<code>[[VAR:%[0-9]+]]</code> &rarr; <code>VAR</code>) from <code>.mir</code>/<code>.ll</code> files before diffing. No backend &mdash; runs entirely in the browser.</p>
+          <ul>
+            <li>Per-commit or full-PR comparison</li>
+            <li>Expandable hunk context</li>
+            <li>Text highlighting (right-click &rarr; Highlight/Unhighlight)</li>
+            <li>Draggable sidebar and code-panel splitters</li>
+          </ul>
+        </div>
+      </div>
     </div>
 
     <!-- Main area -->
@@ -55,6 +78,7 @@
           Files
           <span id="file-count-badge">0</span>
         </div>
+        <span id="pr-title"></span>
         <div id="file-list"></div>
       </div>
       <div id="splitter"></div>
@@ -62,7 +86,7 @@
         <div id="diff-empty">
           <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" style="opacity:0.4"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg>
           Enter a PR URL and click Load
-          <span class="hint">Tip: Select text in the diff and right-click to track values across changes</span>
+          <span class="hint">Tip: Select text in the diff and right-click to highlight values across changes</span>
         </div>
       </div>
     </div>

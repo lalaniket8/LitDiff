@@ -1,4 +1,4 @@
-/* CheckLinesViewer — client-side GitHub PR diff viewer for .mir/.ll files */
+/* LitDiff — client-side GitHub PR diff viewer for .mir/.ll files */
 
 (function () {
   "use strict";
@@ -17,11 +17,14 @@
   const elToken       = byId("gh-token");
   const elViewSel     = byId("view-select");
   const elFileBadge   = byId("file-count-badge");
+  const elBtnInfo     = byId("btn-info");
+  const elAboutOverlay = byId("about-overlay");
+  const elAboutClose  = byId("about-close");
 
   // ── Constants ───────────────────────────────────────────
   const ALLOWED_EXTENSIONS = [".mir", ".ll"];
-  const TOKEN_KEY     = "checklines_gh_token";
-  const HINT_KEY      = "checklines_hint_shown";
+  const TOKEN_KEY     = "litdiff_gh_token";
+  const HINT_KEY      = "litdiff_hint_shown";
   const DEFAULT_REPO  = "ROCm/llvm-project";
   const CONTEXT_ALL   = Infinity;
   const CONTEXT_STEPS = [3, 10, 25, 75, CONTEXT_ALL];
@@ -320,12 +323,12 @@
       tr.classList.add("expandable-hunk");
       tr.title = "Click to show more context lines";
 
-      const ctn = tr.querySelector(".d2h-code-line-ctn");
-      if (ctn && !ctn.querySelector(".d2h-expand-icon")) {
+      const lineNumCell = tr.querySelector(".d2h-code-linenumber, .d2h-code-side-linenumber");
+      if (lineNumCell && !lineNumCell.querySelector(".d2h-expand-icon")) {
         const icon = document.createElement("span");
         icon.className = "d2h-expand-icon";
-        icon.innerHTML = "&#x21D5;";
-        ctn.prepend(icon);
+        icon.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.75.75 0 0 1 .53.22l3.25 3.25a.75.75 0 0 1-1.06 1.06L8 2.81 5.28 5.53a.75.75 0 0 1-1.06-1.06L7.47 1.22A.75.75 0 0 1 8 1Zm3.78 9.47a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 11.53a.75.75 0 1 1 1.06-1.06L8 13.19l2.72-2.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+        lineNumCell.prepend(icon);
       }
 
       tr.addEventListener("click", expandContext);
@@ -376,7 +379,7 @@
   function maybeShowTrackHint() {
     if (localStorage.getItem(HINT_KEY) || state.trackedText) return;
     localStorage.setItem(HINT_KEY, "1");
-    setStatus("Tip: Select text and right-click to track it");
+    setStatus("Tip: Select text and right-click to highlight it");
     setTimeout(() => {
       if (elStatus.textContent.startsWith("Tip:")) setStatus("Ready");
     }, 8000);
@@ -531,13 +534,13 @@
     trackItem.className = "track-menu-item";
     trackItem.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 3.22a.75.75 0 0 1 0 1.06L4.56 11H7.25a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 2 11.75v-4.5a.75.75 0 0 1 1.5 0v2.69l6.72-6.72a.75.75 0 0 1 1.06 0ZM13.5 9.5a.75.75 0 0 0-1.5 0v2.75a.25.25 0 0 1-.25.25H9a.75.75 0 0 0 0 1.5h2.75A1.75 1.75 0 0 0 13.5 12.25V9.5Z"/></svg>' +
-      "Track";
+      "Highlight";
 
     const untrackItem = document.createElement("div");
     untrackItem.className = "track-menu-item";
     untrackItem.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>' +
-      "Untrack";
+      "Unhighlight";
 
     menu.appendChild(trackItem);
     menu.appendChild(untrackItem);
@@ -573,14 +576,14 @@
       clearTrackHighlights();
       applyTrackHighlights();
       const count = elDiffPane.querySelectorAll(".track-highlight").length;
-      setStatus(`Tracking "${pendingText.length > 30 ? pendingText.slice(0, 27) + "…" : pendingText}" — ${count} occurrence(s)`);
+      setStatus(`Highlighting "${pendingText.length > 30 ? pendingText.slice(0, 27) + "…" : pendingText}" — ${count} occurrence(s)`);
     });
 
     untrackItem.addEventListener("click", () => {
       hideMenu();
       state.trackedText = "";
       clearTrackHighlights();
-      setStatus("Tracking cleared");
+      setStatus("Highlight cleared");
     });
 
     document.addEventListener("click", (e) => {
@@ -591,6 +594,20 @@
       if (e.key === "Escape") hideMenu();
     });
   }
+
+  // ── About modal ────────────────────────────────────────
+
+  function showAbout()  { elAboutOverlay.classList.remove("hidden"); }
+  function hideAbout()  { elAboutOverlay.classList.add("hidden"); }
+
+  elBtnInfo.addEventListener("click", showAbout);
+  elAboutClose.addEventListener("click", hideAbout);
+  elAboutOverlay.addEventListener("click", (e) => {
+    if (e.target === elAboutOverlay) hideAbout();
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !elAboutOverlay.classList.contains("hidden")) hideAbout();
+  });
 
   // ── Event wiring and initialization ─────────────────────
 

@@ -1,4 +1,4 @@
-# CheckLinesViewer
+# LitDiff
 
 Browser diff viewer for [LLVM FileCheck](https://llvm.org/docs/CommandGuide/FileCheck.html) check lines in GitHub PRs. Strips FileCheck pattern noise (`[[VAR:%[0-9]+]]` → `VAR`) from `.mir`/`.ll` files before diffing. No backend — runs entirely in the browser.
 
@@ -6,9 +6,8 @@ Browser diff viewer for [LLVM FileCheck](https://llvm.org/docs/CommandGuide/File
 
 - FileCheck normalization (`[[NAME:%[0-9]+]]` → `NAME`, `[[NAME]]` → `NAME`)
 - Per-commit or full-PR comparison
-- Expandable hunk context (3 → 10 → 25 → 75 → all)
-- Text tracking (right-click → Track/Untrack)
-- Draggable sidebar and code-panel splitters
+- Github like UI/UX
+- Code-wide text highlighting (right-click → Highlight/Unhighlight)
 
 > **Warning:** By default `GH_AUTH_TOKEN` is saved to browser `localStorage`, which persists across sessions and has no expiry. Anyone with access to the browser profile or developer tools can read it.
 
