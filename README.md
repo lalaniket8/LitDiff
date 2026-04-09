@@ -5,9 +5,8 @@ Browser diff viewer for [LLVM FileCheck](https://llvm.org/docs/CommandGuide/File
 ## Features
 
 - FileCheck normalization (`[[NAME:%[0-9]+]]` → `NAME`, `[[NAME]]` → `NAME`)
-- Per-commit or full-PR comparison
 - Github like UI/UX
-- Code-wide text highlighting (right-click → Highlight/Unhighlight)
+- Code-wide text highlighting (right-click → Highlight / Unhighlight) to help track variables
 
 > **Warning:** By default `GH_AUTH_TOKEN` is saved to browser `localStorage`, which persists across sessions and has no expiry. Anyone with access to the browser profile or developer tools can read it.
 
@@ -15,7 +14,7 @@ Browser diff viewer for [LLVM FileCheck](https://llvm.org/docs/CommandGuide/File
 
 Open `index.html`, enter a PR number (defaults to `ROCm/llvm-project`) or full PR URL, click **Load**.
 
-**Token** — optional read-only PAT (`public_repo`) for higher API rate limits. Stored in `localStorage`; check **Session** for `sessionStorage`.
+**TOKEN** — gh auth token, optional read-only PAT (`public_repo`) for higher API rate limits, stored in `localStorage`.
 
 ## Architecture
 

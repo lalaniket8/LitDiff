@@ -58,14 +58,17 @@
           <button id="about-close" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <p>Browser diff viewer for <a href="https://llvm.org/docs/CommandGuide/FileCheck.html" target="_blank" rel="noopener">LLVM FileCheck</a> check lines in GitHub PRs.</p>
-          <p>Strips FileCheck pattern noise (<code>[[VAR:%[0-9]+]]</code> &rarr; <code>VAR</code>) from <code>.mir</code>/<code>.ll</code> files before diffing. No backend &mdash; runs entirely in the browser.</p>
+          <p>Browser diff viewer for <a href="https://llvm.org/docs/CommandGuide/FileCheck.html" target="_blank" rel="noopener">LLVM FileCheck</a> check lines in GitHub PRs. Strips FileCheck pattern noise (<code>[[VAR:%[0-9]+]]</code> &rarr; <code>VAR</code>) from <code>.mir</code>/<code>.ll</code> files before diffing. No backend &mdash; runs entirely in the browser.</p>
+          <h4>Features</h4>
           <ul>
-            <li>Per-commit or full-PR comparison</li>
-            <li>Expandable hunk context</li>
-            <li>Text highlighting (right-click &rarr; Highlight/Unhighlight)</li>
-            <li>Draggable sidebar and code-panel splitters</li>
+            <li>FileCheck normalization (<code>[[NAME:%[0-9]+]]</code> &rarr; <code>NAME</code>, <code>[[NAME]]</code> &rarr; <code>NAME</code>)</li>
+            <li>GitHub-like UI/UX</li>
+            <li>Code-wide text highlighting (right-click &rarr; Highlight / Unhighlight) to help track variables</li>
           </ul>
+          <p class="modal-warning">&#9888; By default <code>GH_AUTH_TOKEN</code> is saved to browser <code>localStorage</code>, which persists across sessions and has no expiry. Anyone with access to the browser profile or developer tools can read it.</p>
+          <h4>Usage</h4>
+          <p>Open <code>index.html</code>, enter a PR number (defaults to <code>ROCm/llvm-project</code>) or full PR URL, click <strong>Load</strong>.</p>
+          <p><strong>TOKEN</strong> &mdash; gh auth token, optional read-only PAT (<code>public_repo</code>) for higher API rate limits, stored in <code>localStorage</code>.</p>
         </div>
       </div>
     </div>
@@ -86,7 +89,6 @@
         <div id="diff-empty">
           <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" style="opacity:0.4"><path d="M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"/></svg>
           Enter a PR URL and click Load
-          <span class="hint">Tip: Select text in the diff and right-click to highlight values across changes</span>
         </div>
       </div>
     </div>
