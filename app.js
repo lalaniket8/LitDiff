@@ -1,65 +1,71 @@
-/* PR Test Diff Viewer — fully client-side, no backend required */
+/* CheckLinesViewer — client-side GitHub PR diff viewer for .mir/.ll files */
 
 (function () {
   "use strict";
 
-  // ── DOM refs ──────────────────────────────────────────────
-  const $ = (id) => document.getElementById(id);
-  const elPrUrl     = $("pr-url");
-  const elBtnLoad   = $("btn-load");
-  const elCommitSel = $("commit-select");
-  const elPrTitle   = $("pr-title");
-  const elStatus    = $("status-msg");
-  const elFileList  = $("file-list");
-  const elDiffPane  = $("diff-pane");
-  const elSplitter  = $("splitter");
-  const elSidebar   = $("sidebar");
-  const elToken     = $("gh-token");
-  const elViewSel   = $("view-select");
-  const elFileBadge = $("file-count-badge");
+  // ── DOM element references ──────────────────────────────
+  function byId(id) { return document.getElementById(id); }
+  const elPrUrl       = byId("pr-url");
+  const elBtnLoad     = byId("btn-load");
+  const elCommitSel   = byId("commit-select");
+  const elPrTitle     = byId("pr-title");
+  const elStatus      = byId("status-msg");
+  const elFileList    = byId("file-list");
+  const elDiffPane    = byId("diff-pane");
+  const elSplitter    = byId("splitter");
+  const elSidebar     = byId("sidebar");
+  const elToken       = byId("gh-token");
+  const elViewSel     = byId("view-select");
+  const elFileBadge   = byId("file-count-badge");
 
+  // ── Constants ───────────────────────────────────────────
   const ALLOWED_EXTENSIONS = [".mir", ".ll"];
-  const TOKEN_KEY    = "checklines_gh_token";
-  const DEFAULT_REPO = "ROCm/llvm-project";
-  const CONTEXT_STEPS = [3, 10, 25, 75, 999999];
+  const TOKEN_KEY     = "checklines_gh_token";
+  const HINT_KEY      = "checklines_hint_shown";
+  const DEFAULT_REPO  = "ROCm/llvm-project";
+  const CONTEXT_ALL   = Infinity;
+  const CONTEXT_STEPS = [3, 10, 25, 75, CONTEXT_ALL];
 
-  // ── State ─────────────────────────────────────────────────
+  // ── Application state (single mutable object) ──────────
   const state = {
     baseRef: "", headRef: "",
-    commits: [],        // [{sha, message}]
-    allFiles: [],       // full-PR filenames
-    commitFiles: null,  // per-commit filenames (null → use allFiles)
+    commits: [],
+    allFiles: [],
+    commitFiles: null,
     commitBaseRef: "", commitHeadRef: "",
     selectedCommit: "ALL",
     selectedFile: null,
-    contentCache: {},   // "base:head:filename" → {oldText, newText}
+    contentCache: {},
     owner: "", repo: "", prNumber: 0,
     contextSize: 3,
     trackedText: "",
   };
 
-  // ── Token persistence ─────────────────────────────────────
+  // ── Global error handler for uncaught promise rejections ──
+  window.addEventListener("unhandledrejection", function (e) {
+    showError(e.reason?.message || "Unexpected error");
+  });
 
-  function loadToken() {
-    const saved = localStorage.getItem(TOKEN_KEY);
-    if (saved) elToken.value = saved;
-  }
-
-  function getToken() {
-    return elToken.value.trim();
-  }
-
-  // ── GitHub REST API helpers ───────────────────────────────
+  // ── GitHub REST API helpers ─────────────────────────────
 
   function ghHeaders(accept) {
     const h = { Accept: accept || "application/vnd.github+json" };
-    const token = getToken();
+    const token = elToken.value.trim();
     if (token) h.Authorization = "Bearer " + token;
     return h;
   }
 
+  // Warn user when API rate limit is nearly exhausted
+  function checkRateLimit(resp) {
+    const remaining = resp.headers.get("X-RateLimit-Remaining");
+    if (remaining !== null && parseInt(remaining, 10) <= 10) {
+      setStatus("Warning: " + remaining + " API requests remaining");
+    }
+  }
+
   async function ghApi(path) {
     const resp = await fetch("https://api.github.com" + path, { headers: ghHeaders() });
+    checkRateLimit(resp);
     if (!resp.ok) {
       const body = await resp.json().catch(() => ({}));
       throw new Error(body.message || "GitHub API " + resp.status);
@@ -78,34 +84,48 @@
     return results;
   }
 
+  // Returns file text; empty string for 404 (new/deleted file), throws on real errors
   async function getFileContent(repoSlug, ref, filepath) {
-    try {
-      const encoded = filepath.split("/").map(encodeURIComponent).join("/");
-      const resp = await fetch(
-        `https://api.github.com/repos/${repoSlug}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
-        { headers: ghHeaders("application/vnd.github.raw+json") }
-      );
-      return resp.ok ? await resp.text() : "";
-    } catch { return ""; }
+    const encoded = filepath.split("/").map(encodeURIComponent).join("/");
+    const resp = await fetch(
+      `https://api.github.com/repos/${repoSlug}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
+      { headers: ghHeaders("application/vnd.github.raw+json") }
+    );
+    checkRateLimit(resp);
+    if (resp.ok) return await resp.text();
+    if (resp.status === 404) return "";
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(body.message || "GitHub API " + resp.status);
   }
 
-  // ── Helpers ───────────────────────────────────────────────
+  // ── Utility helpers ─────────────────────────────────────
 
-  const setStatus     = (msg) => { elStatus.textContent = msg; };
-  const hasAllowedExt = (f) => ALLOWED_EXTENSIONS.some((ext) => f.endsWith(ext));
+  function setStatus(msg) { elStatus.textContent = msg; }
 
+  function hasAllowedExt(f) {
+    return ALLOWED_EXTENSIONS.some((ext) => f.endsWith(ext));
+  }
+
+  // Strip FileCheck pattern noise from .mir/.ll content
   function normalizeFileCheck(text) {
-    return text
-      .replace(/\[\[(\w+):%\[0-9\]\+\]\]/g, "$1")
-      .replace(/\[\[(\w+)\]\]/g, "$1");
+    return text.replace(/\[\[(\w+)(?::%\[0-9\]\+)?\]\]/g, "$1");
   }
-  const currentFiles  = () => state.selectedCommit === "ALL" ? state.allFiles : (state.commitFiles || []);
-  const cacheKey      = (base, head, file) => `${base}:${head}:${file}`;
 
-  const currentRefs = () =>
-    state.selectedCommit === "ALL"
+  function currentFiles() {
+    return state.selectedCommit === "ALL" ? state.allFiles : (state.commitFiles || []);
+  }
+
+  function cacheKey(base, head, file) {
+    return `${base}:${head}:${file}`;
+  }
+
+  function currentRefs() {
+    return state.selectedCommit === "ALL"
       ? { base: state.baseRef, head: state.headRef }
       : { base: state.commitBaseRef, head: state.commitHeadRef };
+  }
+
+  function repoSlug() { return state.owner + "/" + state.repo; }
 
   function escapeHtml(s) {
     return s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -113,10 +133,11 @@
   }
 
   function parsePrUrl(url) {
-    const m = url.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+    const m = url.trim().match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
     return m ? { owner: m[1], repo: m[2], prNumber: +m[3] } : null;
   }
 
+  // Accepts bare PR number (resolves to DEFAULT_REPO) or full URL
   function resolveInput(raw) {
     const s = String(raw || "");
     return /^\d+$/.test(s) ? `https://github.com/${DEFAULT_REPO}/pull/${s}` : s;
@@ -138,7 +159,41 @@
     }
   }
 
-  // ── Rendering ─────────────────────────────────────────────
+  // ── Drag helper (supports AbortSignal for listener cleanup) ──
+
+  // AbortController for code-panel splitter listeners (re-created each render)
+  let codePanelAC = null;
+
+  function makeDraggable(splitterEl, onDrag, signal) {
+    let dragging = false;
+    let rafId = 0;
+    const opts = signal ? { signal } : undefined;
+
+    splitterEl.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      dragging = true;
+      splitterEl.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    }, opts);
+
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => onDrag(e));
+    }, opts);
+
+    document.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      cancelAnimationFrame(rafId);
+      splitterEl.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }, opts);
+  }
+
+  // ── Rendering ───────────────────────────────────────────
 
   function renderFileList() {
     const files = currentFiles();
@@ -187,18 +242,24 @@
       elDiffPane.innerHTML = '<div id="diff-empty">Select a file from the list</div>';
       return;
     }
+    const isSbs = elViewSel.value === "side-by-side";
     elDiffPane.innerHTML = Diff2Html.html(diffStr, {
       drawFileList: false,
-      outputFormat: elViewSel.value === "side-by-side" ? "side-by-side" : "line-by-line",
+      outputFormat: isSbs ? "side-by-side" : "line-by-line",
       matching: "none",
       renderNothingWhenEmpty: false,
     });
-    const isSbs = elViewSel.value === "side-by-side";
     elDiffPane.classList.toggle("sbs-mode", isSbs);
     if (isSbs) injectCodePanelSplitter();
+    postProcessHunkHeaders();
+    applyTrackHighlights();
   }
 
+  // Adds a draggable splitter between left/right code panels in SBS mode
   function injectCodePanelSplitter() {
+    if (codePanelAC) codePanelAC.abort();
+    codePanelAC = new AbortController();
+
     elDiffPane.querySelectorAll(".d2h-files-diff").forEach((container) => {
       const sides = container.querySelectorAll(":scope > .d2h-file-side-diff");
       if (sides.length !== 2 || container.querySelector(".code-panel-splitter")) return;
@@ -207,47 +268,31 @@
       splitter.className = "code-panel-splitter";
       container.insertBefore(splitter, sides[1]);
 
-      let dragging = false;
-
-      splitter.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        dragging = true;
-        splitter.classList.add("dragging");
-        document.body.style.cursor = "col-resize";
-        document.body.style.userSelect = "none";
-      });
-
-      document.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
+      makeDraggable(splitter, (e) => {
         const rect = container.getBoundingClientRect();
-        const offset = e.clientX - rect.left;
-        const total = rect.width;
-        const pct = Math.max(10, Math.min(90, (offset / total) * 100));
+        const pct = Math.max(10, Math.min(90, ((e.clientX - rect.left) / rect.width) * 100));
         sides[0].style.flex = "none";
         sides[1].style.flex = "none";
         sides[0].style.width = pct + "%";
         sides[1].style.width = (100 - pct) + "%";
-      });
-
-      document.addEventListener("mouseup", () => {
-        if (!dragging) return;
-        dragging = false;
-        splitter.classList.remove("dragging");
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      });
+      }, codePanelAC.signal);
 
       syncVerticalScroll(sides[0], sides[1]);
     });
   }
 
+  // Keeps left and right code panels scrolled in sync (rAF-throttled)
   function syncVerticalScroll(a, b) {
     let syncing = false;
+    let rafId = 0;
     function handle(source, target) {
       if (syncing) return;
-      syncing = true;
-      target.scrollTop = source.scrollTop;
-      syncing = false;
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        syncing = true;
+        target.scrollTop = source.scrollTop;
+        syncing = false;
+      });
     }
     a.addEventListener("scroll", () => handle(a, b));
     b.addEventListener("scroll", () => handle(b, a));
@@ -258,26 +303,19 @@
     const { base, head } = currentRefs();
     const entry = state.contentCache[cacheKey(base, head, state.selectedFile)];
     if (!entry) { renderDiff(null); return; }
-    let oldText = normalizeFileCheck(entry.oldText);
-    let newText = normalizeFileCheck(entry.newText);
     renderDiff(Diff.createTwoFilesPatch(
       "a/" + state.selectedFile, "b/" + state.selectedFile,
-      oldText, newText, "", "", { context: state.contextSize }
+      entry.oldText, entry.newText, "", "", { context: state.contextSize }
     ));
-    postProcessHunkHeaders();
-    applyTrackHighlights();
   }
 
+  // Adds expand-on-click behaviour to @@ hunk header rows
   function postProcessHunkHeaders() {
-    const atMax = state.contextSize >= 999999;
-    const seen = new Set();
+    if (state.contextSize >= CONTEXT_ALL) return;
 
     elDiffPane.querySelectorAll(".d2h-info").forEach((el) => {
       const tr = el.tagName === "TR" ? el : el.closest("tr");
-      if (!tr || seen.has(tr)) return;
-      seen.add(tr);
-
-      if (atMax) return;
+      if (!tr || tr.classList.contains("expandable-hunk")) return;
 
       tr.classList.add("expandable-hunk");
       tr.title = "Click to show more context lines";
@@ -294,17 +332,19 @@
     });
   }
 
+  // Steps through CONTEXT_STEPS on each click
   function expandContext() {
     const scrollPos = elDiffPane.scrollTop;
     const idx = CONTEXT_STEPS.indexOf(state.contextSize);
     state.contextSize =
       idx >= 0 && idx < CONTEXT_STEPS.length - 1
         ? CONTEXT_STEPS[idx + 1]
-        : 999999;
+        : CONTEXT_ALL;
     renderCurrentFile();
     requestAnimationFrame(() => { elDiffPane.scrollTop = scrollPos; });
   }
 
+  // Fetches file contents and renders diff for the selected file
   async function selectFile(filename) {
     state.selectedFile = filename;
     state.contextSize = 3;
@@ -312,26 +352,37 @@
 
     const { base, head } = currentRefs();
     const key = cacheKey(base, head, filename);
-    if (state.contentCache[key]) { renderCurrentFile(); return; }
+    if (state.contentCache[key]) { renderCurrentFile(); maybeShowTrackHint(); return; }
 
     elDiffPane.innerHTML = '<div id="diff-empty">Loading diff…</div>';
     setStatus("Fetching file contents…");
 
     try {
-      const slug = state.owner + "/" + state.repo;
       const [oldText, newText] = await Promise.all([
-        getFileContent(slug, base, filename),
-        getFileContent(slug, head, filename),
+        getFileContent(repoSlug(), base, filename),
+        getFileContent(repoSlug(), head, filename),
       ]);
-      state.contentCache[key] = { oldText, newText };
+      state.contentCache[key] = { oldText: normalizeFileCheck(oldText), newText: normalizeFileCheck(newText) };
       if (state.selectedFile === filename) renderCurrentFile();
       setStatus("Ready");
+      maybeShowTrackHint();
     } catch (err) {
       showError(err.message);
     }
   }
 
-  // ── Commit selector ───────────────────────────────────────
+  // ── One-time track feature hint (shown once after first file loads) ──
+
+  function maybeShowTrackHint() {
+    if (localStorage.getItem(HINT_KEY) || state.trackedText) return;
+    localStorage.setItem(HINT_KEY, "1");
+    setStatus("Tip: Select text and right-click to track it");
+    setTimeout(() => {
+      if (elStatus.textContent.startsWith("Tip:")) setStatus("Ready");
+    }, 8000);
+  }
+
+  // ── Commit selector ─────────────────────────────────────
 
   function populateCommits() {
     elCommitSel.innerHTML = '<option value="ALL">ALL</option>';
@@ -357,7 +408,7 @@
 
     setStatus("Fetching commit info…");
     try {
-      const data = await ghApi(`/repos/${state.owner}/${state.repo}/commits/${sha}`);
+      const data = await ghApi(`/repos/${repoSlug()}/commits/${sha}`);
       state.commitBaseRef = data.parents?.[0]?.sha || "";
       state.commitHeadRef = sha;
       state.commitFiles   = (data.files || []).map((f) => f.filename).filter(hasAllowedExt);
@@ -368,7 +419,7 @@
     }
   }
 
-  // ── Load PR ───────────────────────────────────────────────
+  // ── Load PR (main entry point) ──────────────────────────
 
   async function loadPR() {
     const raw = elPrUrl.value.trim();
@@ -394,13 +445,11 @@
     elDiffPane.innerHTML = '<div id="diff-empty">Loading…</div>';
 
     try {
-      const slug = parsed.owner + "/" + parsed.repo;
-      const pr   = parsed.prNumber;
-
+      const slug = repoSlug();
       const [prData, commitsData, filesData] = await Promise.all([
-        ghApi(`/repos/${slug}/pulls/${pr}`),
-        ghApiPaginated(`/repos/${slug}/pulls/${pr}/commits`),
-        ghApiPaginated(`/repos/${slug}/pulls/${pr}/files`),
+        ghApi(`/repos/${slug}/pulls/${state.prNumber}`),
+        ghApiPaginated(`/repos/${slug}/pulls/${state.prNumber}/commits`),
+        ghApiPaginated(`/repos/${slug}/pulls/${state.prNumber}/files`),
       ]);
 
       let baseRef = prData.base.ref;
@@ -409,7 +458,9 @@
           `/repos/${slug}/compare/${encodeURIComponent(prData.base.ref)}...${prData.head.sha}`
         );
         if (cmp.merge_base_commit?.sha) baseRef = cmp.merge_base_commit.sha;
-      } catch { /* fall back to branch name */ }
+      } catch (e) {
+        if (e.message && /rate limit/i.test(e.message)) throw e;
+      }
 
       state.baseRef  = baseRef;
       state.headRef  = prData.head.sha;
@@ -419,7 +470,7 @@
         message: c.commit.message.split("\n")[0],
       }));
 
-      elPrTitle.textContent = `#${pr} ${prData.title || ""}`;
+      elPrTitle.textContent = `#${state.prNumber} ${prData.title || ""}`;
       populateCommits();
       showFirstFile();
       setStatus(`${state.allFiles.length} file(s) — ${state.commits.length} commit(s)`);
@@ -430,34 +481,7 @@
     }
   }
 
-  // ── Splitter drag ─────────────────────────────────────────
-
-  function setupSplitter() {
-    let dragging = false;
-
-    elSplitter.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      dragging = true;
-      elSplitter.classList.add("dragging");
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    });
-
-    document.addEventListener("mousemove", (e) => {
-      if (!dragging) return;
-      elSidebar.style.width = Math.max(100, Math.min(e.clientX, window.innerWidth - 200)) + "px";
-    });
-
-    document.addEventListener("mouseup", () => {
-      if (!dragging) return;
-      dragging = false;
-      elSplitter.classList.remove("dragging");
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    });
-  }
-
-  // ── Track highlights ─────────────────────────────────
+  // ── Track highlights (text search + <mark> injection) ──
 
   function applyTrackHighlights() {
     if (!state.trackedText) return;
@@ -474,19 +498,16 @@
 
         const frag = document.createDocumentFragment();
         let pos = 0;
-        while (true) {
-          const i = text.indexOf(needle, pos);
-          if (i === -1) {
-            frag.appendChild(document.createTextNode(text.slice(pos)));
-            break;
-          }
-          if (i > pos) frag.appendChild(document.createTextNode(text.slice(pos, i)));
+        let idx;
+        while ((idx = text.indexOf(needle, pos)) !== -1) {
+          if (idx > pos) frag.appendChild(document.createTextNode(text.slice(pos, idx)));
           const mark = document.createElement("mark");
           mark.className = "track-highlight";
           mark.textContent = needle;
           frag.appendChild(mark);
-          pos = i + needle.length;
+          pos = idx + needle.length;
         }
+        frag.appendChild(document.createTextNode(text.slice(pos)));
         node.parentNode.replaceChild(frag, node);
       }
     });
@@ -500,7 +521,7 @@
     });
   }
 
-  // ── Track context menu ──────────────────────────────────
+  // ── Track context menu (right-click to track/untrack selected text) ──
 
   function setupTrackContextMenu() {
     const menu = document.createElement("div");
@@ -571,19 +592,24 @@
     });
   }
 
-  // ── Event wiring ──────────────────────────────────────────
+  // ── Event wiring and initialization ─────────────────────
 
-  elViewSel.addEventListener("change", () => renderCurrentFile());
+  elViewSel.addEventListener("change", renderCurrentFile);
   elBtnLoad.addEventListener("click", loadPR);
   elPrUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") loadPR(); });
   elCommitSel.addEventListener("change", onCommitChange);
+
   elToken.addEventListener("change", () => {
     const t = elToken.value.trim();
     if (t) localStorage.setItem(TOKEN_KEY, t);
     else localStorage.removeItem(TOKEN_KEY);
   });
 
-  loadToken();
-  setupSplitter();
+  const savedToken = localStorage.getItem(TOKEN_KEY);
+  if (savedToken) elToken.value = savedToken;
+
+  makeDraggable(elSplitter, (e) => {
+    elSidebar.style.width = Math.max(100, Math.min(e.clientX, window.innerWidth - 200)) + "px";
+  });
   setupTrackContextMenu();
 })();
