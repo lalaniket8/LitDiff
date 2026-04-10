@@ -41,7 +41,7 @@
     contentCache: {},
     owner: "", repo: "", prNumber: 0,
     contextSize: 3,
-    highlightedTexts: [],
+    highlightPhrases: [],
   };
 
   // ── Global error handler for uncaught promise rejections ──
@@ -376,7 +376,7 @@
   // ── One-time highlight feature hint (shown once after first file loads) ──
 
   function maybeShowHighlightHint() {
-    if (localStorage.getItem(HINT_KEY) || state.highlightedTexts.length > 0) return;
+    if (localStorage.getItem(HINT_KEY) || state.highlightPhrases.length > 0) return;
     localStorage.setItem(HINT_KEY, "1");
     setStatus("Tip: Select text and right-click → Add highlight (multiple phrases supported)");
     setTimeout(() => {
@@ -483,124 +483,137 @@
 
   // ── Diff highlights (text search + <mark> injection) ──
 
-  function injectHighlightNeedle(needle) {
-    elDiffPane.querySelectorAll(".d2h-code-line-ctn").forEach((ctn) => {
-      const walker = document.createTreeWalker(ctn, NodeFilter.SHOW_TEXT);
+  function uniquePhrasesPreservingOrder(phrases) {
+    const seen = new Set();
+    const out = [];
+    for (const p of phrases) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+    }
+    return out;
+  }
+
+  function wrapPhraseMatchesInMarks(phrase) {
+    elDiffPane.querySelectorAll(".d2h-code-line-ctn").forEach((lineContainer) => {
+      const walker = document.createTreeWalker(lineContainer, NodeFilter.SHOW_TEXT);
       const textNodes = [];
       while (walker.nextNode()) textNodes.push(walker.currentNode);
 
-      for (const node of textNodes) {
-        const text = node.nodeValue;
-        if (text.indexOf(needle) === -1) continue;
+      for (const textNode of textNodes) {
+        const text = textNode.nodeValue;
+        if (text.indexOf(phrase) === -1) continue;
 
-        const frag = document.createDocumentFragment();
-        let pos = 0;
-        let idx;
-        while ((idx = text.indexOf(needle, pos)) !== -1) {
-          if (idx > pos) frag.appendChild(document.createTextNode(text.slice(pos, idx)));
+        const fragment = document.createDocumentFragment();
+        let sliceStart = 0;
+        let matchIndex;
+        while ((matchIndex = text.indexOf(phrase, sliceStart)) !== -1) {
+          if (matchIndex > sliceStart) {
+            fragment.appendChild(document.createTextNode(text.slice(sliceStart, matchIndex)));
+          }
           const mark = document.createElement("mark");
           mark.className = "diff-highlight";
-          mark.textContent = needle;
-          frag.appendChild(mark);
-          pos = idx + needle.length;
+          mark.textContent = phrase;
+          fragment.appendChild(mark);
+          sliceStart = matchIndex + phrase.length;
         }
-        frag.appendChild(document.createTextNode(text.slice(pos)));
-        node.parentNode.replaceChild(frag, node);
+        fragment.appendChild(document.createTextNode(text.slice(sliceStart)));
+        textNode.parentNode.replaceChild(fragment, textNode);
       }
     });
   }
 
   function applyHighlights() {
     clearHighlights();
-    if (!state.highlightedTexts.length) return;
-    const needles = dedupeHighlightOrder(state.highlightedTexts)
+    if (!state.highlightPhrases.length) return;
+    const phrasesLongestFirst = uniquePhrasesPreservingOrder(state.highlightPhrases)
       .slice()
       .sort((a, b) => b.length - a.length);
-    for (const needle of needles) injectHighlightNeedle(needle);
+    for (const phrase of phrasesLongestFirst) wrapPhraseMatchesInMarks(phrase);
   }
 
   function clearHighlights() {
-    elDiffPane.querySelectorAll(".diff-highlight").forEach((mark) => {
-      const parent = mark.parentNode;
-      mark.replaceWith(document.createTextNode(mark.textContent));
-      parent.normalize();
+    elDiffPane.querySelectorAll(".diff-highlight").forEach((elHighlightMark) => {
+      const parentNode = elHighlightMark.parentNode;
+      elHighlightMark.replaceWith(document.createTextNode(elHighlightMark.textContent));
+      parentNode.normalize();
     });
   }
 
   // ── Highlight context menu (right-click) ──
 
   function setupHighlightContextMenu() {
-    const menu = document.createElement("div");
-    menu.id = "highlight-context-menu";
+    const elHighlightMenu = document.createElement("div");
+    elHighlightMenu.id = "highlight-context-menu";
 
-    const addHighlightItem = document.createElement("div");
-    addHighlightItem.className = "highlight-menu-item";
-    addHighlightItem.innerHTML =
+    const elMenuAddPhrase = document.createElement("div");
+    elMenuAddPhrase.className = "highlight-menu-item";
+    elMenuAddPhrase.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.28 3.22a.75.75 0 0 1 0 1.06L4.56 11H7.25a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 2 11.75v-4.5a.75.75 0 0 1 1.5 0v2.69l6.72-6.72a.75.75 0 0 1 1.06 0ZM13.5 9.5a.75.75 0 0 0-1.5 0v2.75a.25.25 0 0 1-.25.25H9a.75.75 0 0 0 0 1.5h2.75A1.75 1.75 0 0 0 13.5 12.25V9.5Z"/></svg>' +
       "Add highlight";
 
-    const clearHighlightsItem = document.createElement("div");
-    clearHighlightsItem.className = "highlight-menu-item";
-    clearHighlightsItem.innerHTML =
+    const elMenuClearAll = document.createElement("div");
+    elMenuClearAll.className = "highlight-menu-item";
+    elMenuClearAll.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>' +
       "Unhighlight";
 
-    menu.appendChild(addHighlightItem);
-    menu.appendChild(clearHighlightsItem);
-    document.body.appendChild(menu);
+    elHighlightMenu.appendChild(elMenuAddPhrase);
+    elHighlightMenu.appendChild(elMenuClearAll);
+    document.body.appendChild(elHighlightMenu);
 
-    function hideMenu() { menu.style.display = "none"; }
+    function hideHighlightMenu() { elHighlightMenu.style.display = "none"; }
 
-    let pendingHighlightText = "";
+    let pendingSelectedPhrase = "";
 
     elDiffPane.addEventListener("contextmenu", (e) => {
-      const sel = window.getSelection().toString().trim();
-      const hasSelection = sel.length > 0;
-      const hasHighlights = state.highlightedTexts.length > 0;
-      if (!hasSelection && !hasHighlights) return;
+      const selectedText = window.getSelection().toString().trim();
+      const hasTextSelection = selectedText.length > 0;
+      const hasActiveHighlights = state.highlightPhrases.length > 0;
+      if (!hasTextSelection && !hasActiveHighlights) return;
 
       e.preventDefault();
-      pendingHighlightText = sel;
+      pendingSelectedPhrase = selectedText;
 
-      addHighlightItem.style.display = hasSelection ? "" : "none";
-      clearHighlightsItem.style.display = hasHighlights ? "" : "none";
+      elMenuAddPhrase.style.display = hasTextSelection ? "" : "none";
+      elMenuClearAll.style.display = hasActiveHighlights ? "" : "none";
 
       const x = Math.min(e.clientX, window.innerWidth - 160);
       const y = Math.min(e.clientY, window.innerHeight - 80);
-      menu.style.left = x + "px";
-      menu.style.top = y + "px";
-      menu.style.display = "block";
+      elHighlightMenu.style.left = x + "px";
+      elHighlightMenu.style.top = y + "px";
+      elHighlightMenu.style.display = "block";
     });
 
-    addHighlightItem.addEventListener("click", () => {
-      hideMenu();
-      if (!pendingHighlightText) return;
-      if (!state.highlightedTexts.includes(pendingHighlightText)) {
-        state.highlightedTexts.push(pendingHighlightText);
+    elMenuAddPhrase.addEventListener("click", () => {
+      hideHighlightMenu();
+      if (!pendingSelectedPhrase) return;
+      if (!state.highlightPhrases.includes(pendingSelectedPhrase)) {
+        state.highlightPhrases.push(pendingSelectedPhrase);
       }
       applyHighlights();
-      const phraseCount = dedupeHighlightOrder(state.highlightedTexts).length;
-      const occ = elDiffPane.querySelectorAll(".diff-highlight").length;
-      const preview =
-        pendingHighlightText.length > 30
-          ? pendingHighlightText.slice(0, 27) + "…"
-          : pendingHighlightText;
-      setStatus(`${phraseCount} phrase(s), ${occ} occurrence(s) — added "${preview}"`);
+      const uniquePhraseCount = uniquePhrasesPreservingOrder(state.highlightPhrases).length;
+      const matchCount = elDiffPane.querySelectorAll(".diff-highlight").length;
+      const phrasePreviewForStatus =
+        pendingSelectedPhrase.length > 30
+          ? pendingSelectedPhrase.slice(0, 27) + "…"
+          : pendingSelectedPhrase;
+      setStatus(`${uniquePhraseCount} phrase(s), ${matchCount} occurrence(s) — added "${phrasePreviewForStatus}"`);
     });
 
-    clearHighlightsItem.addEventListener("click", () => {
-      hideMenu();
-      state.highlightedTexts = [];
+    elMenuClearAll.addEventListener("click", () => {
+      hideHighlightMenu();
+      state.highlightPhrases = [];
       clearHighlights();
       setStatus("All highlights cleared");
     });
 
     document.addEventListener("click", (e) => {
-      if (!menu.contains(e.target)) hideMenu();
+      if (!elHighlightMenu.contains(e.target)) hideHighlightMenu();
     });
 
     window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideMenu();
+      if (e.key === "Escape") hideHighlightMenu();
     });
   }
 
