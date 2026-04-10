@@ -362,14 +362,22 @@ del.d2h-change, ins.d2h-change,
 .highlight-menu-item:hover { background: rgba(56,139,253,0.15); }
 .highlight-menu-item svg   { flex-shrink: 0; opacity: 0.7; }
 
-/* ── Highlight marks ──────────────────────────────── */
-.diff-highlight {
-  background: rgba(210, 153, 34, 0.35);
-  border-bottom: 2px solid #d29922;
+/* ── Highlight marks (color chosen by phrase order; 8 hues cycle) ── */
+/* #diff-pane + mark + dual class + !important: beat diff2html/td !important and UA <mark> */
+#diff-pane mark.diff-highlight {
   border-radius: 2px;
   color: inherit;
   padding: 0 1px;
+  border-bottom: 2px solid;
 }
+#diff-pane mark.diff-highlight.diff-highlight--0 { background-color: rgba(210, 153, 34, 0.35) !important; border-bottom-color: #d29922 !important; }
+#diff-pane mark.diff-highlight.diff-highlight--1 { background-color: rgba(56, 189, 248, 0.3) !important;  border-bottom-color: #38bdf8 !important; }
+#diff-pane mark.diff-highlight.diff-highlight--2 { background-color: rgba(244, 114, 182, 0.32) !important; border-bottom-color: #f472b6 !important; }
+#diff-pane mark.diff-highlight.diff-highlight--3 { background-color: rgba(163, 230, 53, 0.22) !important; border-bottom-color: #a3e635 !important; }
+#diff-pane mark.diff-highlight.diff-highlight--4 { background-color: rgba(167, 139, 250, 0.32) !important; border-bottom-color: #a78bfa !important; }
+#diff-pane mark.diff-highlight.diff-highlight--5 { background-color: rgba(251, 146, 60, 0.3) !important;  border-bottom-color: #fb923c !important; }
+#diff-pane mark.diff-highlight.diff-highlight--6 { background-color: rgba(45, 212, 191, 0.28) !important; border-bottom-color: #2dd4bf !important; }
+#diff-pane mark.diff-highlight.diff-highlight--7 { background-color: rgba(251, 113, 133, 0.3) !important; border-bottom-color: #fb7185 !important; }
 
 /* ── About modal ──────────────────────────────────── */
 .modal-overlay {

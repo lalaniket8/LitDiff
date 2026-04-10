@@ -467,6 +467,7 @@
   }
 
   // ── Diff highlights (text search + <mark> injection) ──
+  const HIGHLIGHT_COLOR_COUNT = 8;
 
   function uniquePhrasesPreservingOrder(phrases) {
     const seen = new Set();
@@ -479,7 +480,8 @@
     return out;
   }
 
-  function wrapPhraseMatchesInMarks(phrase) {
+  function wrapPhraseMatchesInMarks(phrase, colorIndex) {
+    const mod = colorIndex % HIGHLIGHT_COLOR_COUNT;
     elDiffPane.querySelectorAll(".d2h-code-line-ctn").forEach((lineContainer) => {
       const walker = document.createTreeWalker(lineContainer, NodeFilter.SHOW_TEXT);
       const textNodes = [];
@@ -497,7 +499,7 @@
             fragment.appendChild(document.createTextNode(text.slice(sliceStart, matchIndex)));
           }
           const mark = document.createElement("mark");
-          mark.className = "diff-highlight";
+          mark.className = "diff-highlight diff-highlight--" + mod;
           mark.textContent = phrase;
           fragment.appendChild(mark);
           sliceStart = matchIndex + phrase.length;
@@ -511,10 +513,15 @@
   function applyHighlights() {
     clearHighlights();
     if (!state.highlightPhrases.length) return;
-    const phrasesLongestFirst = uniquePhrasesPreservingOrder(state.highlightPhrases)
-      .slice()
-      .sort((a, b) => b.length - a.length);
-    for (const phrase of phrasesLongestFirst) wrapPhraseMatchesInMarks(phrase);
+    const uniqueOrdered = uniquePhrasesPreservingOrder(state.highlightPhrases);
+    const phraseToColorIndex = new Map();
+    uniqueOrdered.forEach((p, i) => phraseToColorIndex.set(p, i));
+
+    const phrasesLongestFirst = uniqueOrdered.slice().sort((a, b) => b.length - a.length);
+    for (const phrase of phrasesLongestFirst) {
+      const colorIdx = phraseToColorIndex.get(phrase) ?? 0;
+      wrapPhraseMatchesInMarks(phrase, colorIdx);
+    }
   }
 
   function clearHighlights() {
