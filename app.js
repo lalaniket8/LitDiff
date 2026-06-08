@@ -234,7 +234,8 @@
     elDiffPane.innerHTML = Diff2Html.html(diffStr, {
       drawFileList: false,
       outputFormat: isSbs ? "side-by-side" : "line-by-line",
-      matching: "none",
+      matching: "words",
+      matchWordsThreshold: 0.25,
       renderNothingWhenEmpty: false,
     });
     elDiffPane.classList.toggle("sbs-mode", isSbs);

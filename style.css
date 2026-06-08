@@ -374,8 +374,22 @@ tr.expandable-hunk:hover .d2h-expand-icon { opacity: 1; transform: scaleY(1.25);
 .d2h-del .d2h-code-line-ctn,
 .d2h-ins .d2h-code-line-ctn { background: transparent !important; color: var(--text) !important; }
 
-del.d2h-change, ins.d2h-change,
-.d2h-code-line-ctn del, .d2h-code-line-ctn ins { background: transparent !important; text-decoration: none !important; color: inherit !important; }
+/* Intra-line change markup: deeper highlight layered on the line-level red/green.
+   diff2html wraps the changed substring in a plain <del>/<ins> (no class); the
+   `d2h-change` class lives on the line element, not these word spans. */
+.d2h-code-line del, .d2h-code-side-line del, .d2h-code-line-ctn del,
+.d2h-code-line ins, .d2h-code-side-line ins, .d2h-code-line-ctn ins {
+  text-decoration: none !important;
+  color: inherit !important;
+  border-radius: 2px !important;
+}
+.d2h-code-line del, .d2h-code-side-line del, .d2h-code-line-ctn del { background: rgba(248, 81, 73, 0.4) !important; }
+.d2h-code-line ins, .d2h-code-side-line ins, .d2h-code-line-ctn ins { background: rgba(63, 185, 80, 0.4) !important; }
+
+/* Suppress diff2html's light-theme change-line tints (tan / pale green) so the
+   dark line backgrounds defined below show through instead. */
+.d2h-file-diff .d2h-del.d2h-change { background: #3f1d22 !important; }
+.d2h-file-diff .d2h-ins.d2h-change { background: #1b3a2a !important; }
 
 /* ── Deleted lines (red) ───────────────────────────── */
 .d2h-code-line.d2h-del, .d2h-code-side-line.d2h-del, td.d2h-del { background: #3f1d22 !important; }
