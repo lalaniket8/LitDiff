@@ -16,6 +16,8 @@
   const elSidebar     = byId("sidebar");
   const elToken       = byId("gh-token");
   const elViewSel     = byId("view-select");
+  const elShowAllCtx  = byId("show-all-context");
+  const elDisableDiff = byId("disable-diff");
   const elFileBadge   = byId("file-count-badge");
   const elBtnInfo     = byId("btn-info");
   const elAboutOverlay = byId("about-overlay");
@@ -43,8 +45,15 @@
     contentCache: {},
     owner: "", repo: "", prNumber: 0,
     contextSize: 3,
+    showAllContext: false,
+    disableDiff: false,
     highlightPhrases: [],
   };
+
+  // Default context for a freshly selected file (full file when "show all" is on)
+  function defaultContextSize() {
+    return state.showAllContext ? CONTEXT_ALL : 3;
+  }
 
   // ── Global error handler for uncaught promise rejections ──
   window.addEventListener("unhandledrejection", function (e) {
@@ -239,8 +248,85 @@
       renderNothingWhenEmpty: false,
     });
     elDiffPane.classList.toggle("sbs-mode", isSbs);
-    if (isSbs) injectCodePanelSplitter();
+    if (isSbs) {
+      injectCodePanelSplitter();
+      postProcessFileHeader();
+    }
     postProcessHunkHeaders();
+    applyHighlights();
+  }
+
+  // ── "Disable diff view": plain old/new text side by side ──
+
+  // Builds one .d2h-file-side-diff pane whose lines all render as context
+  // (no d2h-del/d2h-ins), mirroring diff2html's side-by-side DOM so the
+  // existing CSS, highlight, splitter and scroll-sync logic all apply.
+  function buildPlainSide(text) {
+    const side = document.createElement("div");
+    side.className = "d2h-file-side-diff";
+    const wrap = document.createElement("div");
+    wrap.className = "d2h-code-wrapper";
+    const table = document.createElement("table");
+    table.className = "d2h-diff-table";
+    const tbody = document.createElement("tbody");
+    tbody.className = "d2h-diff-tbody";
+
+    const lines = text === "" ? [] : text.replace(/\n$/, "").split("\n");
+    lines.forEach((line, i) => {
+      const tr = document.createElement("tr");
+
+      const numTd = document.createElement("td");
+      numTd.className = "d2h-code-side-linenumber d2h-cntx";
+      numTd.textContent = String(i + 1);
+
+      const codeTd = document.createElement("td");
+      codeTd.className = "d2h-cntx";
+      const lineDiv = document.createElement("div");
+      lineDiv.className = "d2h-code-side-line";
+      const prefix = document.createElement("span");
+      prefix.className = "d2h-code-line-prefix";
+      prefix.innerHTML = "&nbsp;";
+      const ctn = document.createElement("span");
+      ctn.className = "d2h-code-line-ctn";
+      if (line === "") ctn.innerHTML = "<br>";
+      else ctn.textContent = line;
+      lineDiv.appendChild(prefix);
+      lineDiv.appendChild(ctn);
+      codeTd.appendChild(lineDiv);
+
+      tr.appendChild(numTd);
+      tr.appendChild(codeTd);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    side.appendChild(wrap);
+    return side;
+  }
+
+  function renderPlainDiff(entry, file) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "d2h-wrapper";
+    const fileWrap = document.createElement("div");
+    fileWrap.className = "d2h-file-wrapper";
+
+    const header = document.createElement("div");
+    header.className = "d2h-file-header";
+    fileWrap.appendChild(header);
+
+    const filesDiff = document.createElement("div");
+    filesDiff.className = "d2h-files-diff";
+    filesDiff.appendChild(buildPlainSide(entry.oldText));
+    filesDiff.appendChild(buildPlainSide(entry.newText));
+    fileWrap.appendChild(filesDiff);
+
+    wrapper.appendChild(fileWrap);
+    elDiffPane.replaceChildren(wrapper);
+
+    elDiffPane.classList.add("sbs-mode");
+    injectCodePanelSplitter();
+    postProcessFileHeader();
     applyHighlights();
   }
 
@@ -287,11 +373,82 @@
     b.addEventListener("scroll", () => handle(b, a));
   }
 
+  // ── Split file header + per-pane copy buttons (SBS only) ──
+
+  const COPY_ICON_SVG =
+    '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/></svg>';
+  const CHECK_ICON_SVG =
+    '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
+
+  function copyPaneText(text, btn) {
+    navigator.clipboard.writeText(text).then(() => {
+      const n = text === "" ? 0 : text.replace(/\n$/, "").split("\n").length;
+      setStatus(`Copied ${n} line(s) to clipboard`);
+      if (btn) {
+        btn.innerHTML = CHECK_ICON_SVG;
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.innerHTML = COPY_ICON_SVG;
+          btn.classList.remove("copied");
+        }, 1200);
+      }
+    }).catch((err) => {
+      setStatus("Copy failed: " + (err && err.message ? err.message : "clipboard unavailable"));
+    });
+  }
+
+  function buildHeaderHalf(label, text, side) {
+    const half = document.createElement("div");
+    half.className = "d2h-header-half d2h-header-half--" + side;
+
+    const name = document.createElement("span");
+    name.className = "d2h-file-name";
+    name.textContent = label;
+    name.title = label;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "d2h-copy-btn";
+    btn.title = "Copy full " + (side === "left" ? "old" : "new") + " file text";
+    btn.setAttribute("aria-label", btn.title);
+    btn.innerHTML = COPY_ICON_SVG;
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      copyPaneText(text, btn);
+    });
+
+    half.appendChild(name);
+    half.appendChild(btn);
+    return half;
+  }
+
+  // Splits each .d2h-file-header into left/right halves aligned with the two
+  // code panes, each showing the file name and a copy button for that pane.
+  function postProcessFileHeader() {
+    if (!elDiffPane.classList.contains("sbs-mode")) return;
+    const file = state.selectedFile;
+    const { base, head } = currentRefs();
+    const entry = file ? state.contentCache[cacheKey(base, head, file)] : null;
+    const oldText = entry ? entry.oldText : "";
+    const newText = entry ? entry.newText : "";
+
+    elDiffPane.querySelectorAll(".d2h-file-header").forEach((header) => {
+      if (header.classList.contains("d2h-file-header--split")) return;
+      header.classList.add("d2h-file-header--split");
+      header.replaceChildren(
+        buildHeaderHalf("a/" + (file || ""), oldText, "left"),
+        buildHeaderHalf("b/" + (file || ""), newText, "right")
+      );
+    });
+  }
+
   function renderCurrentFile() {
     if (!state.selectedFile) { renderDiff(null); return; }
     const { base, head } = currentRefs();
     const entry = state.contentCache[cacheKey(base, head, state.selectedFile)];
     if (!entry) { renderDiff(null); return; }
+    if (state.disableDiff) { renderPlainDiff(entry, state.selectedFile); return; }
     renderDiff(Diff.createTwoFilesPatch(
       "a/" + state.selectedFile, "b/" + state.selectedFile,
       entry.oldText, entry.newText, "", "", { context: state.contextSize }
@@ -334,7 +491,7 @@
 
   async function selectFile(filename) {
     state.selectedFile = filename;
-    state.contextSize = 3;
+    state.contextSize = defaultContextSize();
     renderFileList();
 
     const { base, head } = currentRefs();
@@ -704,6 +861,21 @@
   // ── Event wiring and initialization ─────────────────────
 
   elViewSel.addEventListener("change", renderCurrentFile);
+
+  elShowAllCtx.addEventListener("change", () => {
+    state.showAllContext = elShowAllCtx.checked;
+    state.contextSize = defaultContextSize();
+    renderCurrentFile();
+  });
+
+  elDisableDiff.addEventListener("change", () => {
+    state.disableDiff = elDisableDiff.checked;
+    // Layout / context controls don't apply while showing raw full text
+    elViewSel.disabled = elDisableDiff.checked;
+    elShowAllCtx.disabled = elDisableDiff.checked;
+    renderCurrentFile();
+  });
+
   elBtnLoad.addEventListener("click", loadPR);
   elPrUrl.addEventListener("keydown", (e) => { if (e.key === "Enter") loadPR(); });
   elCommitSel.addEventListener("change", onCommitChange);

@@ -126,6 +126,21 @@ html, body {
 #toolbar input::selection              { background: rgba(56,139,253,0.4); color: var(--text); }
 #toolbar label                         { font-size: var(--toolbar-font-size); color: var(--muted); flex-shrink: 0; font-weight: 500; }
 
+.toolbar-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+.toolbar-checkbox input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.toolbar-checkbox:has(input:disabled) { opacity: 0.5; cursor: not-allowed; }
+.toolbar-checkbox:has(input:disabled) input { cursor: not-allowed; }
+
 #pr-title {
   display: none;
   font-size: 11px;
@@ -331,6 +346,51 @@ html, body {
 
 .d2h-file-header                { background: var(--surface) !important; color: var(--text) !important; border-bottom: 1px solid var(--border-subtle) !important; padding: 8px 10px !important; }
 .d2h-file-header .d2h-file-name { color: var(--text) !important; font-size: 12px !important; }
+
+/* ── Split file header (side-by-side): two halves + copy buttons ── */
+.d2h-file-header--split         { display: flex !important; align-items: stretch; padding: 0 !important; }
+.d2h-header-half {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  overflow: hidden;
+}
+.d2h-header-half--left          { border-right: 1px solid var(--border-subtle); }
+.d2h-header-half .d2h-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code-font);
+}
+
+.d2h-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.d2h-copy-btn:hover {
+  color: var(--text);
+  background: var(--btn-bg);
+  border-color: var(--border-subtle);
+}
+.d2h-copy-btn.copied { color: #3fb950; }
+.d2h-copy-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.d2h-copy-btn svg { display: block; }
 
 .d2h-info                       { background: var(--surface) !important; color: #6e7681 !important; border-color: var(--border-subtle) !important; transition: background 0.15s ease; }
 .d2h-code-line.d2h-info         { background: var(--surface) !important; }
