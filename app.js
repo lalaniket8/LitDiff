@@ -253,6 +253,7 @@
       postProcessFileHeader();
     }
     postProcessHunkHeaders();
+    postProcessGutterFolds();
     applyHighlights();
   }
 
@@ -327,6 +328,7 @@
     elDiffPane.classList.add("sbs-mode");
     injectCodePanelSplitter();
     postProcessFileHeader();
+    postProcessGutterFolds();
     applyHighlights();
   }
 
@@ -487,6 +489,234 @@
         : CONTEXT_ALL;
     renderCurrentFile();
     requestAnimationFrame(() => { elDiffPane.scrollTop = scrollPos; });
+  }
+
+  // ── Gutter block (brace) selection ─────────────────────
+  // Clicking a line-number gutter cell whose code line opens a `{ … }` block
+  // selects that whole block (real DOM selection + clipboard copy). Brace
+  // matching runs against the full file text in state.contentCache, so it is
+  // correct even when only collapsed context is rendered.
+
+  const FOLD_ICON_SVG =
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M6.22 3.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 1 1-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 0 1 0-1.06Z"/></svg>';
+
+  // "old" → left pane / oldText, "new" → right pane / newText
+  function paneSideOf(sideEl) {
+    const parent = sideEl && sideEl.parentElement;
+    if (!parent) return "new";
+    const sides = parent.querySelectorAll(":scope > .d2h-file-side-diff");
+    return sides[0] === sideEl ? "old" : "new";
+  }
+
+  // Full file lines (1-based when indexed +1) for a given side, from the cache.
+  function blockLinesForSide(side) {
+    const file = state.selectedFile;
+    if (!file) return [];
+    const { base, head } = currentRefs();
+    const entry = state.contentCache[cacheKey(base, head, file)];
+    if (!entry) return [];
+    const text = side === "old" ? entry.oldText : entry.newText;
+    return text === "" ? [] : text.replace(/\n$/, "").split("\n");
+  }
+
+  // True when a line leaves at least one `{` unclosed (a real block opener).
+  // Closes that come before their open (e.g. "} else {") are ignored.
+  function lineOpensBlock(line) {
+    if (!line || line.indexOf("{") === -1) return false;
+    let depth = 0;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === "{") depth++;
+      else if (ch === "}" && depth > 0) depth--;
+    }
+    return depth > 0;
+  }
+
+  // 0-based index of the line holding the matching `}`, or -1 if unbalanced.
+  function findBlockEnd(lines, startIdx) {
+    let depth = 0, started = false;
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i];
+      for (let c = 0; c < line.length; c++) {
+        const ch = line[c];
+        if (ch === "{") { depth++; started = true; }
+        else if (ch === "}" && started) { depth--; if (depth === 0) return i; }
+      }
+    }
+    return -1;
+  }
+
+  // Resolve { mode, side, line, sideEl|table } from a gutter <td>, or null.
+  function gutterCellInfo(cell) {
+    if (cell.classList.contains("d2h-info")) return null;
+    if (cell.classList.contains("d2h-code-side-linenumber")) {
+      const n = parseInt(cell.textContent, 10);
+      if (isNaN(n)) return null;
+      const sideEl = cell.closest(".d2h-file-side-diff");
+      return { mode: "sbs", side: paneSideOf(sideEl), line: n, sideEl };
+    }
+    if (cell.classList.contains("d2h-code-linenumber")) {
+      const tr = cell.closest("tr");
+      const code = tr && tr.querySelector("td.d2h-code-line");
+      if (!code) return null;
+      const n1 = parseInt((cell.querySelector(".line-num1") || {}).textContent, 10);
+      const n2 = parseInt((cell.querySelector(".line-num2") || {}).textContent, 10);
+      let side, line;
+      if (code.classList.contains("d2h-del")) { side = "old"; line = n1; }
+      else if (code.classList.contains("d2h-ins")) { side = "new"; line = n2; }
+      else if (!isNaN(n2)) { side = "new"; line = n2; }
+      else if (!isNaN(n1)) { side = "old"; line = n1; }
+      else return null;
+      if (isNaN(line)) return null;
+      return { mode: "unified", side, line, table: tr.closest("table") };
+    }
+    return null;
+  }
+
+  // Ordered [{ line, ctn }] of code rows currently rendered for info's side.
+  function collectRenderedLines(info) {
+    const result = [];
+    if (info.mode === "sbs") {
+      info.sideEl.querySelectorAll("tr").forEach((tr) => {
+        const gut = tr.querySelector("td.d2h-code-side-linenumber");
+        const ctn = tr.querySelector(".d2h-code-line-ctn");
+        if (!gut || !ctn) return;
+        const n = parseInt(gut.textContent, 10);
+        if (!isNaN(n)) result.push({ line: n, ctn });
+      });
+      return result;
+    }
+    const table = info.table || elDiffPane.querySelector(".d2h-diff-table");
+    if (!table) return result;
+    table.querySelectorAll("tr").forEach((tr) => {
+      const gut = tr.querySelector("td.d2h-code-linenumber");
+      const code = tr.querySelector("td.d2h-code-line");
+      const ctn = tr.querySelector(".d2h-code-line-ctn");
+      if (!gut || !code || !ctn) return;
+      if (info.side === "old") {
+        if (code.classList.contains("d2h-ins")) return;
+        const n = parseInt((gut.querySelector(".line-num1") || {}).textContent, 10);
+        if (!isNaN(n)) result.push({ line: n, ctn });
+      } else {
+        if (code.classList.contains("d2h-del")) return;
+        const n = parseInt((gut.querySelector(".line-num2") || {}).textContent, 10);
+        if (!isNaN(n)) result.push({ line: n, ctn });
+      }
+    });
+    return result;
+  }
+
+  function copyBlockText(text, lineCount, partial, unbalanced) {
+    let msg;
+    if (unbalanced)
+      msg = `Block of ${lineCount} line(s) — no matching “}” found, selected to end of file`;
+    else if (partial)
+      msg = `Copied block (${lineCount} lines); enable “Show all lines” to select it fully on screen`;
+    else
+      msg = `Copied block (${lineCount} lines) to clipboard`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => setStatus(msg))
+        .catch(() => setStatus(`Selected block (${lineCount} lines)`));
+    } else {
+      setStatus(`Selected block (${lineCount} lines)`);
+    }
+  }
+
+  // Select the brace-delimited block that starts at the clicked gutter line.
+  function selectBlockFromGutter(cell) {
+    const info = gutterCellInfo(cell);
+    if (!info) return;
+    const lines = blockLinesForSide(info.side);
+    const startIdx = info.line - 1;
+    if (startIdx < 0 || startIdx >= lines.length) return;
+    if (!lineOpensBlock(lines[startIdx])) return;
+
+    const endIdx = findBlockEnd(lines, startIdx);
+    const unbalanced = endIdx === -1;
+    const endLine = unbalanced ? lines.length : endIdx + 1;
+    const startLine = info.line;
+    const lineCount = endLine - startLine + 1;
+    const blockText = lines.slice(startIdx, endLine).join("\n");
+
+    // Real selection over the rows that are actually rendered for this side.
+    const rows = collectRenderedLines(info)
+      .filter((r) => r.line >= startLine && r.line <= endLine);
+    let partial = true;
+    if (rows.length) {
+      const range = document.createRange();
+      range.setStartBefore(rows[0].ctn);
+      range.setEndAfter(rows[rows.length - 1].ctn);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      partial = rows[rows.length - 1].line < endLine;
+    }
+    copyBlockText(blockText, lineCount, partial, unbalanced);
+  }
+
+  function markFoldCell(cell) {
+    if (cell.classList.contains("lit-fold-cell")) return;
+    cell.classList.add("lit-fold-cell");
+    cell.title = "Click to select this { … } block";
+    const icon = document.createElement("span");
+    icon.className = "lit-fold-icon";
+    icon.innerHTML = FOLD_ICON_SVG;
+    cell.appendChild(icon);
+  }
+
+  // After each render, flag gutter cells whose code line opens a block.
+  function postProcessGutterFolds() {
+    if (!state.selectedFile) return;
+    if (elDiffPane.classList.contains("sbs-mode")) {
+      elDiffPane.querySelectorAll(".d2h-file-side-diff").forEach((sideEl) => {
+        const lines = blockLinesForSide(paneSideOf(sideEl));
+        if (!lines.length) return;
+        sideEl.querySelectorAll("td.d2h-code-side-linenumber").forEach((gut) => {
+          if (gut.classList.contains("d2h-info")) return;
+          const n = parseInt(gut.textContent, 10);
+          if (!isNaN(n) && n >= 1 && n <= lines.length && lineOpensBlock(lines[n - 1]))
+            markFoldCell(gut);
+        });
+      });
+      return;
+    }
+    const oldLines = blockLinesForSide("old");
+    const newLines = blockLinesForSide("new");
+    elDiffPane.querySelectorAll("td.d2h-code-linenumber").forEach((gut) => {
+      if (gut.classList.contains("d2h-info")) return;
+      const tr = gut.closest("tr");
+      const code = tr && tr.querySelector("td.d2h-code-line");
+      if (!code) return;
+      let lines, n;
+      if (code.classList.contains("d2h-del")) {
+        lines = oldLines;
+        n = parseInt((gut.querySelector(".line-num1") || {}).textContent, 10);
+      } else if (code.classList.contains("d2h-ins")) {
+        lines = newLines;
+        n = parseInt((gut.querySelector(".line-num2") || {}).textContent, 10);
+      } else {
+        lines = newLines;
+        n = parseInt((gut.querySelector(".line-num2") || {}).textContent, 10);
+        if (isNaN(n)) {
+          lines = oldLines;
+          n = parseInt((gut.querySelector(".line-num1") || {}).textContent, 10);
+        }
+      }
+      if (!isNaN(n) && n >= 1 && n <= lines.length && lineOpensBlock(lines[n - 1]))
+        markFoldCell(gut);
+    });
+  }
+
+  function setupGutterBlockSelect() {
+    elDiffPane.addEventListener("click", (e) => {
+      const cell = e.target.closest("td.d2h-code-side-linenumber, td.d2h-code-linenumber");
+      if (!cell || cell.classList.contains("d2h-info")) return;
+      if (!cell.classList.contains("lit-fold-cell")) return;
+      e.preventDefault();
+      selectBlockFromGutter(cell);
+    });
   }
 
   async function selectFile(filename) {
@@ -916,4 +1146,5 @@
   elBtnSidebarExpand.addEventListener("click", () => setSidebarCollapsed(false));
 
   setupHighlightContextMenu();
+  setupGutterBlockSelect();
 })();

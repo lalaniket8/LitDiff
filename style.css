@@ -426,6 +426,29 @@ tr.expandable-hunk:hover .d2h-expand-icon { opacity: 1; transform: scaleY(1.25);
 .d2h-code-linenumber,
 .d2h-code-side-linenumber       { background: var(--diff-bg) !important; color: #6e7681 !important; border-color: var(--border-subtle) !important; }
 
+/* Keep line numbers and +/- prefixes out of text selections / copies so a
+   block selection (and ordinary drag-select) yields clean code only. */
+.d2h-code-linenumber,
+.d2h-code-side-linenumber,
+.d2h-code-line-prefix           { user-select: none; -webkit-user-select: none; }
+
+/* ── Gutter block-fold affordance (select a { … } block) ── */
+td.lit-fold-cell                { position: relative; cursor: pointer; }
+td.lit-fold-cell:hover          { color: var(--accent) !important; background: rgba(56,139,253,0.15) !important; }
+.lit-fold-icon {
+  display: none;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  pointer-events: none;
+}
+.lit-fold-icon svg              { display: block; }
+td.lit-fold-cell:hover .lit-fold-icon { display: inline-flex; }
+
 /* ── Shared del / ins color overrides ──────────────── */
 .d2h-del, .d2h-ins { color: var(--text) !important; }
 
