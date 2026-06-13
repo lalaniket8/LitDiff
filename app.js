@@ -382,9 +382,21 @@
   const CHECK_ICON_SVG =
     '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/></svg>';
 
+  // ── Clipboard helpers ──────────────────────────────────
+  // Strip empty/whitespace-only lines so copied text has no blank lines
+  // between content lines. Original line content (incl. indentation) and
+  // order are preserved; no leading/trailing blank line is left behind.
+  function stripBlankLines(text) {
+    return String(text)
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "")
+      .join("\n");
+  }
+
   function copyPaneText(text, btn) {
-    navigator.clipboard.writeText(text).then(() => {
-      const n = text === "" ? 0 : text.replace(/\n$/, "").split("\n").length;
+    const clip = stripBlankLines(text);
+    navigator.clipboard.writeText(clip).then(() => {
+      const n = clip === "" ? 0 : clip.split("\n").length;
       setStatus(`Copied ${n} line(s) to clipboard`);
       if (btn) {
         btn.innerHTML = CHECK_ICON_SVG;
@@ -616,7 +628,7 @@
       msg = `Copied block (${lineCount} lines) to clipboard`;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text)
+      navigator.clipboard.writeText(stripBlankLines(text))
         .then(() => setStatus(msg))
         .catch(() => setStatus(`Selected block (${lineCount} lines)`));
     } else {
